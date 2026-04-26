@@ -3,6 +3,9 @@ from link_injector import graph, set_LLM
 import css
 from funcs import *
 
+# 최상단에서 CSS 및 페이지 설정 적용 (매번 실행됨)
+css.apply_css()
+
 def run():
     # 세션 상태 초기화
     if 'result' not in st.session_state:
