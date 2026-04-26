@@ -1,5 +1,5 @@
 import streamlit as st
-from link_injector import graph, set_llm
+from link_injector import graph, set_LLM
 import css
 from funcs import *
 
@@ -27,7 +27,7 @@ def run():
         if api_key != st.session_state.api_key:
             st.session_state.api_key = api_key
             if api_key:
-                set_llm(api_key)
+                set_LLM(api_key)
                 st.success("✅ API Key가 설정되었습니다")
 
     st.title("db link 주입기")
