@@ -3,7 +3,6 @@ from link_injector import graph, set_LLM
 import css
 from funcs import *
 
-
 def run():
     # 세션 상태 초기화
     if 'result' not in st.session_state:
@@ -67,17 +66,18 @@ def run():
 
     if len(st.session_state.result) != 0 and st.session_state.result.get('answer') is not None:
         
-        if st.button("검증하기"):
-            if st.session_state.result.get('db_link') is not None :
-                is_valid = verification(query_1, st.session_state.result['link_sql'], st.session_state.result['db_link'])   
-            else:
-                is_valid = verification_2(query_1, st.session_state.result['link_sql']) 
+        if st.session_state.result.get('router_result') == 'link_extractor':
+            if st.button("검증하기"):
+                if st.session_state.result.get('db_link') is not None :
+                    is_valid = verification(query_1, st.session_state.result['answer'], st.session_state.result['db_link'])
+                else:
+                    is_valid = verification_2(query_1, st.session_state.result['link_sql']) 
 
-            if is_valid:
-                st.write("원본 일치")
-            else:
-                st.write("원본 불일치")
+                if is_valid:
+                    st.write("정상 : 변환 sql 링크 제거시 원본과 일치")
+                else:
+                    st.write("비정상 : 변환 sql 링크 제거시 원본과 불일치")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
     run()
