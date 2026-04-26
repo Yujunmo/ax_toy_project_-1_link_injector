@@ -10,15 +10,19 @@ from typing import List
 
 # 내용 : 쿼리 주입 과정을 predefined worflow로 구현
 
-load_dotenv()
+def set_LLM (api_key):
+    global LLM, SMALL_LLM
 
-llm = ChatOpenAI(
-    model='gpt-5.4'
-)
+    LLM = ChatOpenAI(
+        model='gpt-5.4'
+        ,openai_api_key=api_key
+        
+    )
 
-small_llm = ChatOpenAI(
-    model='gpt-5.4-mini',
-)
+    SMALL_LLM = ChatOpenAI(
+        model='gpt-5.4-mini',
+        openai_api_key=api_key,
+    )
 
 class AgentState(TypedDict):
     query : str
@@ -30,7 +34,7 @@ class AgentState(TypedDict):
 
 
 class RouteType(BaseModel):
-    target: Literal['sql', 'llm'] = Field(description='The target for the query to answer')
+    target: Literal['sql', 'LLM'] = Field(description='The target for the query to answer')
  
 class user_data(BaseModel):
     db_link: List[str] = Field(description='오라클의 dblink 또는 "dblink확인필요" 라는 문자열이 담긴 리스트')
@@ -42,13 +46,13 @@ class Transformed_sql(BaseModel):
     sql : str  = Field(description='오라클의 query')
 
 # 노드 
-def router(state:AgentState) -> Literal['llm','sql']:
+def router(state:AgentState) -> Literal['LLM','sql']:
 
-    structured_router_llm = small_llm.with_structured_output(RouteType)
+    structured_router_LLM = SMALL_LLM.with_structured_output(RouteType)
 
     router_system_prompt = """
-    Your are an expert at routing a user's question to 'sql' or 'llm'.
-    if you think the question is not related to sql, route to llm.
+    Your are an expert at routing a user's question to 'sql' or 'LLM'.
+    if you think the question is not related to sql, route to LLM.
     """
 
     router_prompt = ChatPromptTemplate.from_messages(
@@ -58,7 +62,7 @@ def router(state:AgentState) -> Literal['llm','sql']:
         ]
     )
 
-    router_chain = router_prompt | structured_router_llm 
+    router_chain = router_prompt | structured_router_LLM 
     rs_route = router_chain.invoke({'query': state['query'], 'sql': state['sql']})
     
     print(f"{rs_route=}")
@@ -81,20 +85,20 @@ def data_extractor(state:AgentState) -> AgentState:
         input_variables=['question']
     )
 
-    info_extract_llm = llm.with_structured_output(user_data)
-    info_extract_chain = {"question" : RunnablePassthrough()}|info_extract_prompt_template | info_extract_llm
+    info_extract_LLM = LLM.with_structured_output(user_data)
+    info_extract_chain = {"question" : RunnablePassthrough()}|info_extract_prompt_template | info_extract_LLM
     rs = info_extract_chain.invoke(state['query'])
     
     print(f"{rs=}")
     return {"db_link" : rs.db_link}
 
 
-def middle_router(state:AgentState) -> Literal['db_link_inserter', 'call_llm']:
-    #사용자 질의에 db_link 가 없거나 복수개면 요청 내용을 일반 llm으로 연결시키는 분기노드 
+def middle_router(state:AgentState) -> Literal['db_link_inserter', 'call_LLM']:
+    #사용자 질의에 db_link 가 없거나 복수개면 요청 내용을 일반 LLM으로 연결시키는 분기노드 
     print("middle_router called")
     
     if state['db_link'] is None or len(state['db_link'])==0 or 'dblink 확인필요' in state['db_link']:
-        return 'call_llm'
+        return 'call_LLM'
     else:
         return 'db_link_inserter'
     
@@ -113,8 +117,8 @@ def db_link_inserter(state:AgentState) -> AgentState:
         input_variables=['sql', 'db_link']
     )
 
-    db_link_insert_llm = llm.with_structured_output(Transformed_sql)
-    db_link_insert_chain = db_link_insert_prompt_template | db_link_insert_llm
+    db_link_insert_LLM = LLM.with_structured_output(Transformed_sql)
+    db_link_insert_chain = db_link_insert_prompt_template | db_link_insert_LLM
     rs_sql = db_link_insert_chain.invoke({ 'sql' : state['sql'], 'db_link' : state['db_link']})
 
     return {"link_sql" : rs_sql.sql, 'answer' : rs_sql.sql}
@@ -123,12 +127,12 @@ def verification(state:AgentState) -> bool:
     print("verification called")
     # db link 가 추가된 sql 이 정상인지 검증하는 노드
 
-    veri_llm = llm.with_structured_output(Score)
+    veri_LLM = LLM.with_structured_output(Score)
 
     # 검증내용 #1 : db link 누락이 있는지 확인
     veri_prompt =  f"주어진  sql : {state['query']}를 참고하여, {state['link_sql']}의 테이블에 db link인 {state['db_link']}가 잘 연결되어 있는지 검토해주세요. \
         요청대로 잘 걸려 있다면 True를 반환하고 아니면 False를 반환해주세요."
-    rs_1 = veri_llm.invoke(veri_prompt).score
+    rs_1 = veri_LLM.invoke(veri_prompt).score
 
     # 검증내용 #2 : 원본 쿼리와 대조 (링크 뺐을시 원본 쿼리와 같은지)
     original_sql = state['sql']
@@ -146,19 +150,19 @@ def verification(state:AgentState) -> bool:
 
     return  (rs_1 and rs_2) 
         
-def call_llm(state:AgentState) -> AgentState:
-    # 일반 질문 처리 llm    
+def call_LLM(state:AgentState) -> AgentState:
+    # 일반 질문 처리 LLM    
     user_request = '아래 요청내용이 sql과 관련이 없으면, 관련해서 다시 질문해달라고 요청해주세요.'
     user_request += state['sql'] + " " + state['query']
     
-    answer = llm.with_structured_output(Transformed_sql).invoke(user_request)
+    answer = LLM.with_structured_output(Transformed_sql).invoke(user_request)
     return {'answer' : answer.sql , 'link_sql' : answer.sql }
 
 
 
 graph_builder = StateGraph(AgentState)
 
-graph_builder.add_node('call_llm',call_llm)
+graph_builder.add_node('call_LLM',call_LLM)
 graph_builder.add_node('data_extractor',data_extractor)
 graph_builder.add_node('db_link_inserter',db_link_inserter)
 
@@ -166,7 +170,7 @@ graph_builder.add_conditional_edges(
     START,
     router,
     {
-        'llm':'call_llm',
+        'LLM':'call_LLM',
         'sql' : 'data_extractor',
     }
 )
@@ -175,7 +179,7 @@ graph_builder.add_conditional_edges(
      middle_router,
      {
         'db_link_inserter' : 'db_link_inserter',
-        'call_llm' : 'call_llm'
+        'call_LLM' : 'call_LLM'
      }
 )
 graph_builder.add_conditional_edges(
